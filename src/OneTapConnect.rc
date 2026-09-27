@@ -1,0 +1,61 @@
+#pragma code_page(65001)
+
+#include <windows.h>
+#include "resource.h"
+
+IDI_APP         ICON "../assets/app.ico"
+IDI_TRAY_WHITE  ICON "../assets/tray-white.ico"
+IDI_TRAY_BLACK  ICON "../assets/tray-black.ico"
+
+IDD_SETTINGS DIALOGEX 0, 0, 270, 192
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "OneTapConnect"
+FONT 9, "Segoe UI", 400, 0, 0x1
+BEGIN
+    LTEXT           "Hotspot name", IDC_STATIC, 10, 12, 70, 8
+    EDITTEXT        IDC_SSID, 84, 10, 176, 14, ES_AUTOHSCROLL
+    LTEXT           "Your iPhone’s name: Settings › General › About › Name", IDC_STATIC, 84, 27, 176, 8
+
+    LTEXT           "Password", IDC_STATIC, 10, 45, 70, 8
+    EDITTEXT        IDC_PASSWORD, 84, 43, 176, 14, ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "Settings › Personal Hotspot › Wi-Fi Password", IDC_STATIC, 84, 60, 176, 8
+
+    GROUPBOX        "Connection", IDC_STATIC, 7, 78, 256, 82
+    AUTORADIOBUTTON "Connect only when I click the icon", IDC_MODE_MANUAL, 16, 92, 240, 10, WS_GROUP | WS_TABSTOP
+    AUTORADIOBUTTON "Connect automatically whenever it’s in range", IDC_MODE_AUTO, 16, 106, 240, 10
+    AUTOCHECKBOX    "Scan for the hotspot before connecting (needs Location access)", IDC_SCAN, 16, 128, 240, 10, WS_GROUP | WS_TABSTOP
+    AUTOCHECKBOX    "Treat as a metered connection to save mobile data", IDC_METERED, 16, 144, 240, 10, WS_TABSTOP
+
+    DEFPUSHBUTTON   "Save", IDOK, 156, 170, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 213, 170, 50, 14
+END
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     1, 0, 0, 0
+PRODUCTVERSION  1, 0, 0, 0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "Saurabh Bansal"
+            VALUE "FileDescription", "OneTapConnect"
+            VALUE "FileVersion", "1.0.0"
+            VALUE "InternalName", "OneTapConnect"
+            VALUE "LegalCopyright", "© 2026 Saurabh Bansal. MIT License."
+            VALUE "OriginalFilename", "OneTapConnect.exe"
+            VALUE "ProductName", "OneTapConnect"
+            VALUE "ProductVersion", "1.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
