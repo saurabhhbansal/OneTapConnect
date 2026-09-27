@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Bluetooth.h"
 #include "DataUsage.h"
 #include "Settings.h"
 #include "WlanClient.h"
@@ -26,7 +27,8 @@ public:
     int Run(bool connectNow);
 
 private:
-    enum class State { Idle, Scanning, Connecting, Connected };
+    // Waking: opening Bluetooth to the iPhone. Waiting: pausing before the next Wi-Fi attempt.
+    enum class State { Idle, Waking, Waiting, Scanning, Connecting, Connected };
 
     struct IconDeleter {
         void operator()(HICON icon) const { DestroyIcon(icon); }
@@ -45,16 +47,22 @@ private:
 
     void OnTrayIcon(UINT event, POINT anchor);
     void OnWlanEvent(const WlanEvent& event);
+    void OnBluetoothResult(int error);
     void OnTimer(UINT_PTR timer);
     void OnCommand(UINT command);
     bool FocusOpenDialog() const;
     void ShowMenu(POINT anchor);
 
     void Connect();
+    void TryWifi();
     void BeginConnect();
+    void WaitAndRetry(UINT delayMs);
+    void GiveUp();
+    void EndAttempt();
+    bool AttemptInProgress() const;
+    std::wstring FailureHint() const;
     void SyncConnectionState();
     void SetState(State state);
-    std::wstring ProfileName() const;
 
     void OpenSettings();
     bool ApplySettings(HWND dialog, const HotspotSettings& updated, const std::wstring& passphrase);
@@ -66,9 +74,11 @@ private:
     UniqueIcon trayIcon_;
 
     WlanClient wlan_;
+    BluetoothWake bluetooth_;
     DataUsage usage_;
     std::optional<HotspotSettings> settings_;
     State state_ = State::Idle;
     GUID interface_{};
+    int bluetoothError_ = 0;
     bool uninstalled_ = false;
 };

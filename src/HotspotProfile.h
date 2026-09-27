@@ -6,10 +6,9 @@
 #include <string>
 #include <string_view>
 
-// Builds the Windows WLAN profile that describes the hidden iPhone hotspot.
+// Builds the Windows WLAN profile that describes the hidden iPhone hotspot. The profile is named after
+// the SSID so Windows lists the hotspot once, under the iPhone's name, and replaces any profile it made itself.
 namespace HotspotProfile {
-
-std::wstring NameFor(std::wstring_view ssid);
 
 bool IsValidSsid(std::wstring_view ssid);
 bool IsValidPassphrase(std::wstring_view passphrase);

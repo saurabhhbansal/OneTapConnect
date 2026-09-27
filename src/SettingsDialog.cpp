@@ -1,5 +1,6 @@
 #include "SettingsDialog.h"
 
+#include "Bluetooth.h"
 #include "HotspotProfile.h"
 #include "resource.h"
 
@@ -7,6 +8,7 @@
 
 #include <algorithm>
 #include <format>
+#include <vector>
 
 namespace {
 
@@ -16,7 +18,34 @@ constexpr wchar_t TypographicApostrophe = L'’';
 struct DialogContext {
     const std::optional<HotspotSettings>& current;
     const ApplySettingsHandler& apply;
+    std::vector<PairedDevice> wakeDevices; // In combo box order.
 };
+
+// Lists paired devices with the saved one, or else the first phone, selected.
+void FillWakeDevices(HWND dialog, DialogContext& context, const HotspotSettings& settings)
+{
+    context.wakeDevices = PairedBluetoothDevices();
+    const bool savedDevicePaired = std::ranges::any_of(
+        context.wakeDevices, [&](const PairedDevice& device) { return device.address == settings.wakeDevice; });
+    if (settings.wakeDevice && !savedDevicePaired)
+        context.wakeDevices.push_back({ .address = settings.wakeDevice, .name = settings.wakeDeviceName });
+
+    HWND combo = GetDlgItem(dialog, IDC_WAKE_DEVICE);
+    if (context.wakeDevices.empty()) {
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"No paired devices"));
+        SendMessageW(combo, CB_SETCURSEL, 0, 0);
+        return;
+    }
+
+    int selection = 0;
+    for (size_t i = 0; i < context.wakeDevices.size(); ++i) {
+        const PairedDevice& device = context.wakeDevices[i];
+        SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(device.name.c_str()));
+        if (device.address == settings.wakeDevice)
+            selection = static_cast<int>(i);
+    }
+    SendMessageW(combo, CB_SETCURSEL, selection, 0);
+}
 
 std::wstring ControlText(HWND dialog, int controlId)
 {
@@ -57,7 +86,7 @@ bool ConfirmApostrophe(HWND dialog, std::wstring& ssid)
     }
 }
 
-void Initialize(HWND dialog, const DialogContext& context)
+void Initialize(HWND dialog, DialogContext& context)
 {
     const HotspotSettings settings = context.current.value_or(HotspotSettings{});
 
@@ -73,6 +102,7 @@ void Initialize(HWND dialog, const DialogContext& context)
     CheckRadioButton(dialog, IDC_MODE_MANUAL, IDC_MODE_AUTO, mode);
     CheckDlgButton(dialog, IDC_SCAN, settings.scanBeforeConnect ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(dialog, IDC_METERED, settings.metered ? BST_CHECKED : BST_UNCHECKED);
+    FillWakeDevices(dialog, context, settings);
 
     const auto instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
     const auto loadIcon = [instance](int size) {
@@ -108,6 +138,16 @@ bool Save(HWND dialog, const DialogContext& context)
         return false;
     }
 
+    const auto wakeSelection = SendDlgItemMessageW(dialog, IDC_WAKE_DEVICE, CB_GETCURSEL, 0, 0);
+    if (context.wakeDevices.empty() || wakeSelection < 0) {
+        Warn(dialog, IDC_WAKE_DEVICE,
+             L"Pair your iPhone with this PC in Windows Settings › Bluetooth & devices, then open Settings again.");
+        return false;
+    }
+    const PairedDevice& device = context.wakeDevices[static_cast<size_t>(wakeSelection)];
+    settings.wakeDevice = device.address;
+    settings.wakeDeviceName = device.name;
+
     return context.apply(dialog, settings, passphrase);
 }
 
@@ -116,7 +156,7 @@ INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lPa
     switch (message) {
     case WM_INITDIALOG:
         SetWindowLongPtrW(dialog, DWLP_USER, lParam);
-        Initialize(dialog, *reinterpret_cast<const DialogContext*>(lParam));
+        Initialize(dialog, *reinterpret_cast<DialogContext*>(lParam));
         return TRUE;
 
     case WM_COMMAND:
@@ -141,7 +181,7 @@ INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lPa
 bool ShowSettingsDialog(HINSTANCE instance, HWND owner, const std::optional<HotspotSettings>& current,
                         const ApplySettingsHandler& apply)
 {
-    const DialogContext context{ current, apply };
+    DialogContext context{ current, apply, {} };
     return DialogBoxParamW(instance, MAKEINTRESOURCEW(IDD_SETTINGS), owner, DialogProc,
                            reinterpret_cast<LPARAM>(&context)) == IDOK;
 }

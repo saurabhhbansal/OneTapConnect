@@ -17,13 +17,15 @@ constexpr wchar_t AppName[] = L"OneTapConnect";
 constexpr UINT TrayIconId = 1;
 constexpr UINT TrayIconMessage = WM_APP + 1;
 constexpr UINT WlanEventMessage = WM_APP + 2;
+constexpr UINT BluetoothResultMessage = WM_APP + 3;
 
 constexpr UINT_PTR ScanTimer = 1;
-constexpr UINT_PTR ConnectTimer = 2;
+constexpr UINT_PTR RetryTimer = 2;
+constexpr UINT_PTR DeadlineTimer = 3;
 constexpr UINT ScanTimeoutMs = 5'000;
-constexpr UINT ConnectTimeoutMs = 30'000;
-
-constexpr wchar_t BroadcastHint[] = L"Make sure your iPhone is broadcasting its hotspot.";
+constexpr UINT HotspotStartupDelayMs = 3'000;
+constexpr UINT RetryIntervalMs = 3'000;
+constexpr UINT AttemptTimeoutMs = 60'000;
 
 enum MenuCommand : UINT {
     CommandConnect = 1,
@@ -64,23 +66,9 @@ bool ReportError(HWND owner, const std::wstring& message, const std::wstring& de
 
 void ScheduleSelfDelete()
 {
-    wchar_t systemDirectory[MAX_PATH];
-    const UINT length = GetSystemDirectoryW(systemDirectory, MAX_PATH);
-    if (length == 0 || length >= MAX_PATH)
-        return;
-
     // The ping gives this process time to exit so its executable can be deleted.
-    const std::wstring shell = std::wstring(systemDirectory) + L"\\cmd.exe";
-    std::wstring command =
-        std::format(L"\"{}\" /d /c ping -n 3 127.0.0.1 >nul & del /f /q \"{}\"", shell, ExecutablePath());
-
-    STARTUPINFOW startup{ .cb = sizeof(startup) };
-    PROCESS_INFORMATION process{};
-    if (CreateProcessW(shell.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
-                       systemDirectory, &startup, &process)) {
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-    }
+    RunHidden(SystemProgram(L"cmd.exe"),
+              std::format(L"/d /c ping -n 3 127.0.0.1 >nul & del /f /q \"{}\"", ExecutablePath()));
 }
 
 }
@@ -158,6 +146,10 @@ LRESULT TrayApp::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         OnWlanEvent(*event);
         return 0;
     }
+
+    case BluetoothResultMessage:
+        OnBluetoothResult(static_cast<int>(wParam));
+        return 0;
 
     case WM_TIMER:
         OnTimer(wParam);
@@ -250,6 +242,8 @@ std::wstring TrayApp::Tooltip() const
         return std::format(L"{}\nConnected to {}", AppName, settings_->ssid);
     case State::Idle:
         return std::format(L"{}\nClick to connect to {}", AppName, settings_->ssid);
+    case State::Waking:
+        return std::format(L"{}\nWaking {} over Bluetooth…", AppName, settings_->ssid);
     default:
         return std::format(L"{}\nConnecting to {}…", AppName, settings_->ssid);
     }
@@ -285,7 +279,7 @@ void TrayApp::OnWlanEvent(const WlanEvent& event)
     if (!settings_)
         return;
 
-    const bool isHotspot = event.profileName == ProfileName();
+    const bool isHotspot = event.profileName == settings_->ssid;
 
     switch (event.kind) {
     case WlanEvent::Kind::ScanFinished:
@@ -295,8 +289,8 @@ void TrayApp::OnWlanEvent(const WlanEvent& event)
 
     case WlanEvent::Kind::Connected:
         if (isHotspot) {
-            const bool requested = state_ == State::Connecting;
-            KillTimer(window_, ConnectTimer);
+            const bool requested = AttemptInProgress();
+            EndAttempt();
             interface_ = event.interfaceGuid;
             usage_.Start(interface_);
             SetState(State::Connected);
@@ -306,12 +300,9 @@ void TrayApp::OnWlanEvent(const WlanEvent& event)
         break;
 
     case WlanEvent::Kind::ConnectionFailed:
-        if (isHotspot && state_ == State::Connecting) {
-            KillTimer(window_, ConnectTimer);
-            SetState(State::Idle);
-            Notify(std::format(L"Couldn’t reach {}", settings_->ssid),
-                   std::format(L"{}\n{}", BroadcastHint, WlanClient::ReasonText(event.reasonCode)), NIIF_WARNING);
-        }
+        // The hotspot takes a few seconds to appear, so keep trying until the attempt's deadline.
+        if (isHotspot && state_ == State::Connecting)
+            WaitAndRetry(RetryIntervalMs);
         break;
 
     case WlanEvent::Kind::Disconnected:
@@ -323,17 +314,28 @@ void TrayApp::OnWlanEvent(const WlanEvent& event)
     }
 }
 
+void TrayApp::OnBluetoothResult(int error)
+{
+    if (state_ != State::Waking)
+        return;
+
+    bluetoothError_ = error;
+    if (error == 0)
+        WaitAndRetry(HotspotStartupDelayMs); // Gives the iPhone's automation time to switch the hotspot on.
+    else
+        TryWifi(); // The hotspot may already be on.
+}
+
 void TrayApp::OnTimer(UINT_PTR timer)
 {
     KillTimer(window_, timer);
 
-    if (timer == ScanTimer && state_ == State::Scanning) {
+    if (timer == ScanTimer && state_ == State::Scanning)
         BeginConnect();
-    } else if (timer == ConnectTimer && state_ == State::Connecting) {
-        SetState(State::Idle);
-        Notify(std::format(L"Couldn’t reach {}", settings_->ssid),
-               std::format(L"{}\nWindows didn’t find it in time.", BroadcastHint), NIIF_WARNING);
-    }
+    else if (timer == RetryTimer && state_ == State::Waiting)
+        TryWifi();
+    else if (timer == DeadlineTimer && AttemptInProgress())
+        GiveUp();
 }
 
 void TrayApp::OnCommand(UINT command)
@@ -406,7 +408,7 @@ void TrayApp::ShowMenu(POINT anchor)
 
 void TrayApp::Connect()
 {
-    if (!settings_) {
+    if (!settings_ || !settings_->wakeDevice) {
         OpenSettings();
         return;
     }
@@ -423,7 +425,17 @@ void TrayApp::Connect()
         return;
     }
     interface_ = interfaces.front();
+    bluetoothError_ = 0;
+    SetTimer(window_, DeadlineTimer, AttemptTimeoutMs, nullptr);
 
+    SetState(State::Waking);
+    bluetooth_.Start(settings_->wakeDevice, [window = window_](int error) {
+        PostMessageW(window, BluetoothResultMessage, static_cast<WPARAM>(error), 0);
+    });
+}
+
+void TrayApp::TryWifi()
+{
     // Without Location permission the scan is refused, so fall straight through to connecting.
     if (settings_->scanBeforeConnect && wlan_.Scan(interface_, settings_->ssid) == ERROR_SUCCESS) {
         SetState(State::Scanning);
@@ -437,8 +449,9 @@ void TrayApp::BeginConnect()
 {
     KillTimer(window_, ScanTimer);
 
-    const DWORD result = wlan_.Connect(interface_, ProfileName());
+    const DWORD result = wlan_.Connect(interface_, settings_->ssid);
     if (result != ERROR_SUCCESS) {
+        EndAttempt();
         SetState(State::Idle);
         const std::wstring detail = result == ERROR_NOT_FOUND
             ? L"The saved hotspot network is missing. Open Settings and save it again."
@@ -446,16 +459,49 @@ void TrayApp::BeginConnect()
         Notify(L"Couldn’t connect", detail, NIIF_ERROR);
         return;
     }
-
     SetState(State::Connecting);
-    SetTimer(window_, ConnectTimer, ConnectTimeoutMs, nullptr);
+}
+
+void TrayApp::WaitAndRetry(UINT delayMs)
+{
+    SetState(State::Waiting);
+    SetTimer(window_, RetryTimer, delayMs, nullptr);
+}
+
+void TrayApp::GiveUp()
+{
+    EndAttempt();
+    SetState(State::Idle);
+    Notify(std::format(L"Couldn’t reach {}", settings_->ssid), FailureHint(), NIIF_WARNING);
+}
+
+// Ends the current attempt, including the Bluetooth connection, which is only needed to wake the hotspot.
+void TrayApp::EndAttempt()
+{
+    KillTimer(window_, ScanTimer);
+    KillTimer(window_, RetryTimer);
+    KillTimer(window_, DeadlineTimer);
+    bluetooth_.Stop();
+}
+
+bool TrayApp::AttemptInProgress() const
+{
+    return state_ != State::Idle && state_ != State::Connected;
+}
+
+std::wstring TrayApp::FailureHint() const
+{
+    if (bluetoothError_)
+        return std::format(L"Your iPhone didn’t answer over Bluetooth (error {}). Check that Bluetooth is on "
+                           L"and the phone is nearby.", bluetoothError_);
+    return L"The hotspot didn’t appear. Check that your iPhone’s Bluetooth automation is set to run immediately.";
 }
 
 // Reading the current connection needs Location permission, so this only runs for users who opted into scanning.
 void TrayApp::SyncConnectionState()
 {
     for (const GUID& guid : wlan_.Interfaces()) {
-        if (wlan_.ConnectedProfile(guid) == ProfileName()) {
+        if (wlan_.ConnectedProfile(guid) == settings_->ssid) {
             interface_ = guid;
             usage_.Start(guid);
             SetState(State::Connected);
@@ -470,11 +516,6 @@ void TrayApp::SetState(State state)
     ShowTrayIcon();
 }
 
-std::wstring TrayApp::ProfileName() const
-{
-    return settings_ ? HotspotProfile::NameFor(settings_->ssid) : std::wstring();
-}
-
 void TrayApp::OpenSettings()
 {
     ShowSettingsDialog(instance_, window_, settings_,
@@ -485,7 +526,6 @@ void TrayApp::OpenSettings()
 
 bool TrayApp::ApplySettings(HWND dialog, const HotspotSettings& updated, const std::wstring& passphrase)
 {
-    const std::wstring profile = HotspotProfile::NameFor(updated.ssid);
     std::wstring error;
 
     if (!passphrase.empty()) {
@@ -494,7 +534,7 @@ bool TrayApp::ApplySettings(HWND dialog, const HotspotSettings& updated, const s
             return ReportError(dialog, L"Couldn’t save the hotspot network.", error);
     } else if (updated.connectMode != settings_->connectMode) {
         // The saved profile keeps the password Windows encrypted, so only the connection mode is rewritten.
-        const auto saved = wlan_.GetProfileXml(profile);
+        const auto saved = wlan_.GetProfileXml(updated.ssid);
         const auto changed = saved ? HotspotProfile::WithConnectMode(*saved, updated.connectMode) : std::nullopt;
         if (!changed || wlan_.SaveProfile(*changed, error) != ERROR_SUCCESS)
             return ReportError(dialog, L"Couldn’t update the hotspot network. Enter the password again and save.",
@@ -502,7 +542,7 @@ bool TrayApp::ApplySettings(HWND dialog, const HotspotSettings& updated, const s
     }
 
     if (settings_ && settings_->ssid != updated.ssid) {
-        wlan_.DeleteProfile(ProfileName());
+        wlan_.DeleteProfile(settings_->ssid);
         if (state_ == State::Connected) {
             usage_.Stop();
             SetState(State::Idle);
@@ -514,7 +554,7 @@ bool TrayApp::ApplySettings(HWND dialog, const HotspotSettings& updated, const s
     if (const auto interfaces = wlan_.Interfaces(); scanNewlyEnabled && !interfaces.empty())
         wlan_.Scan(interfaces.front(), updated.ssid);
 
-    wlan_.SetMetered(profile, updated.metered);
+    WlanClient::SetMetered(updated.ssid, updated.metered);
 
     const bool firstSetup = !settings_;
     Settings::SaveHotspot(updated);
@@ -539,7 +579,7 @@ void TrayApp::Uninstall()
         return;
 
     if (settings_)
-        wlan_.DeleteProfile(ProfileName());
+        wlan_.DeleteProfile(settings_->ssid);
     Settings::RemoveAll();
     ScheduleSelfDelete();
 

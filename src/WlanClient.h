@@ -36,7 +36,7 @@ public:
     DWORD SaveProfile(const std::wstring& profileXml, std::wstring& errorText) const;
     std::optional<std::wstring> GetProfileXml(const std::wstring& profileName) const;
     void DeleteProfile(const std::wstring& profileName) const;
-    void SetMetered(const std::wstring& profileName, bool metered) const;
+    static void SetMetered(const std::wstring& profileName, bool metered);
 
     // Both require the user's Location permission on current Windows versions.
     DWORD Scan(const GUID& interfaceGuid, const std::wstring& ssid) const;

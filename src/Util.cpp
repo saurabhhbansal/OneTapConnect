@@ -63,3 +63,31 @@ std::wstring ExecutablePath()
         path.resize(path.size() * 2);
     }
 }
+
+std::wstring SystemProgram(std::wstring_view fileName)
+{
+    wchar_t directory[MAX_PATH];
+    const UINT length = GetSystemDirectoryW(directory, MAX_PATH);
+    if (length == 0 || length >= MAX_PATH)
+        return {};
+    return std::format(L"{}\\{}", std::wstring_view(directory, length), fileName);
+}
+
+bool RunHidden(const std::wstring& program, const std::wstring& arguments, unsigned long timeoutMs)
+{
+    std::wstring commandLine = std::format(L"\"{}\" {}", program, arguments);
+    STARTUPINFOW startup{ .cb = sizeof(startup) };
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(program.c_str(), commandLine.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
+                        nullptr, &startup, &process))
+        return false;
+
+    DWORD exitCode = 0;
+    const bool succeeded = timeoutMs == 0
+        || (WaitForSingleObject(process.hProcess, timeoutMs) == WAIT_OBJECT_0
+            && GetExitCodeProcess(process.hProcess, &exitCode) && exitCode == 0);
+
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return succeeded;
+}

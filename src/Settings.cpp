@@ -68,6 +68,8 @@ std::optional<HotspotSettings> Settings::LoadHotspot()
     settings.connectMode = ReadNumber<DWORD>(L"AutoConnect").value_or(0) ? ConnectMode::Automatic : ConnectMode::Manual;
     settings.scanBeforeConnect = ReadNumber<DWORD>(L"ScanBeforeConnect").value_or(0) != 0;
     settings.metered = ReadNumber<DWORD>(L"Metered").value_or(1) != 0;
+    settings.wakeDevice = ReadNumber<ULONGLONG>(L"WakeDevice").value_or(0);
+    settings.wakeDeviceName = ReadString(AppKey, L"WakeDeviceName").value_or(L"");
     return settings;
 }
 
@@ -77,6 +79,8 @@ void Settings::SaveHotspot(const HotspotSettings& settings)
     WriteDword(L"AutoConnect", settings.connectMode == ConnectMode::Automatic);
     WriteDword(L"ScanBeforeConnect", settings.scanBeforeConnect);
     WriteDword(L"Metered", settings.metered);
+    WriteQword(L"WakeDevice", settings.wakeDevice);
+    WriteString(AppKey, L"WakeDeviceName", settings.wakeDeviceName);
 }
 
 MonthlyUsage Settings::LoadUsage()

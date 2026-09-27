@@ -7,7 +7,7 @@ IDI_APP         ICON "../assets/app.ico"
 IDI_TRAY_WHITE  ICON "../assets/tray-white.ico"
 IDI_TRAY_BLACK  ICON "../assets/tray-black.ico"
 
-IDD_SETTINGS DIALOGEX 0, 0, 270, 192
+IDD_SETTINGS DIALOGEX 0, 0, 270, 226
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
 CAPTION "OneTapConnect"
@@ -21,14 +21,18 @@ BEGIN
     EDITTEXT        IDC_PASSWORD, 84, 43, 176, 14, ES_PASSWORD | ES_AUTOHSCROLL
     LTEXT           "Settings › Personal Hotspot › Wi-Fi Password", IDC_STATIC, 84, 60, 176, 8
 
-    GROUPBOX        "Connection", IDC_STATIC, 7, 78, 256, 82
-    AUTORADIOBUTTON "Connect only when I click the icon", IDC_MODE_MANUAL, 16, 92, 240, 10, WS_GROUP | WS_TABSTOP
-    AUTORADIOBUTTON "Connect automatically whenever it’s in range", IDC_MODE_AUTO, 16, 106, 240, 10
-    AUTOCHECKBOX    "Scan for the hotspot before connecting (needs Location access)", IDC_SCAN, 16, 128, 240, 10, WS_GROUP | WS_TABSTOP
-    AUTOCHECKBOX    "Treat as a metered connection to save mobile data", IDC_METERED, 16, 144, 240, 10, WS_TABSTOP
+    LTEXT           "iPhone", IDC_STATIC, 10, 80, 70, 8
+    COMBOBOX        IDC_WAKE_DEVICE, 84, 78, 176, 120, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Paired over Bluetooth to switch the hotspot on", IDC_STATIC, 84, 95, 176, 8
 
-    DEFPUSHBUTTON   "Save", IDOK, 156, 170, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 213, 170, 50, 14
+    GROUPBOX        "Connection", IDC_STATIC, 7, 112, 256, 82
+    AUTORADIOBUTTON "Connect only when I click the icon", IDC_MODE_MANUAL, 16, 126, 240, 10, WS_GROUP | WS_TABSTOP
+    AUTORADIOBUTTON "Connect automatically whenever it’s in range", IDC_MODE_AUTO, 16, 140, 240, 10
+    AUTOCHECKBOX    "Scan for the hotspot before connecting (needs Location access)", IDC_SCAN, 16, 162, 240, 10, WS_GROUP | WS_TABSTOP
+    AUTOCHECKBOX    "Treat as a metered connection to save mobile data", IDC_METERED, 16, 178, 240, 10, WS_TABSTOP
+
+    DEFPUSHBUTTON   "Save", IDOK, 156, 204, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 213, 204, 50, 14
 END
 
 VS_VERSION_INFO VERSIONINFO

@@ -14,3 +14,4 @@
 #define IDC_MODE_AUTO   1004
 #define IDC_SCAN        1005
 #define IDC_METERED     1006
+#define IDC_WAKE_DEVICE 1007

@@ -2,8 +2,6 @@
 
 #include "Util.h"
 
-#include <wcmapi.h>
-
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -14,6 +12,7 @@
 namespace {
 
 constexpr DWORD ClientVersion = 2;
+constexpr DWORD NetshTimeoutMs = 10'000;
 
 struct WlanFree {
     void operator()(void* memory) const { WlanFreeMemory(memory); }
@@ -96,15 +95,13 @@ void WlanClient::DeleteProfile(const std::wstring& profileName) const
         WlanDeleteProfile(handle_, &guid, profileName.c_str(), nullptr);
 }
 
-void WlanClient::SetMetered(const std::wstring& profileName, bool metered) const
+// WcmSetProperty reports success but leaves a saved profile's cost unchanged on current Windows,
+// while netsh's documented cost parameter applies it without elevation.
+void WlanClient::SetMetered(const std::wstring& profileName, bool metered)
 {
-    WCM_CONNECTION_COST_DATA cost{};
-    cost.ConnectionCost = metered ? WCM_CONNECTION_COST_FIXED : WCM_CONNECTION_COST_UNRESTRICTED;
-
-    for (const GUID& guid : Interfaces()) {
-        WcmSetProperty(&guid, profileName.c_str(), wcm_intf_property_connection_cost, nullptr, sizeof(cost),
-                       reinterpret_cast<const BYTE*>(&cost));
-    }
+    const std::wstring arguments =
+        std::format(L"wlan set profileparameter name=\"{}\" cost={}", profileName, metered ? L"Fixed" : L"Default");
+    RunHidden(SystemProgram(L"netsh.exe"), arguments, NetshTimeoutMs);
 }
 
 DWORD WlanClient::Scan(const GUID& interfaceGuid, const std::wstring& ssid) const

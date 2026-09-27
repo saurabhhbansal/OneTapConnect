@@ -47,11 +47,6 @@ std::wstring ToHex(std::string_view bytes)
 
 }
 
-std::wstring HotspotProfile::NameFor(std::wstring_view ssid)
-{
-    return std::wstring(ssid) + L" (OneTapConnect)";
-}
-
 bool HotspotProfile::IsValidSsid(std::wstring_view ssid)
 {
     const size_t bytes = ToUtf8(ssid).size();
@@ -65,8 +60,8 @@ bool HotspotProfile::IsValidPassphrase(std::wstring_view passphrase)
 }
 
 // The SSID is written as hex because iPhone names usually contain a typographic apostrophe (U+2019),
-// and Windows matches the hex bytes exactly. A manual, non-broadcast profile means Windows only
-// probes for the hotspot when asked to, instead of announcing its name everywhere.
+// and Windows matches the hex bytes exactly. nonBroadcast makes Windows probe for the SSID by name,
+// which is how it finds a hotspot that isn't announcing itself.
 std::wstring HotspotProfile::BuildXml(std::wstring_view ssid, std::wstring_view passphrase, ConnectMode mode)
 {
     return std::format(
@@ -98,7 +93,7 @@ std::wstring HotspotProfile::BuildXml(std::wstring_view ssid, std::wstring_view 
         </security>
     </MSM>
 </WLANProfile>)",
-        EscapeXml(NameFor(ssid)), ToHex(ToUtf8(ssid)), EscapeXml(ssid), ModeName(mode), EscapeXml(passphrase));
+        EscapeXml(ssid), ToHex(ToUtf8(ssid)), EscapeXml(ssid), ModeName(mode), EscapeXml(passphrase));
 }
 
 std::optional<std::wstring> HotspotProfile::WithConnectMode(std::wstring profileXml, ConnectMode mode)

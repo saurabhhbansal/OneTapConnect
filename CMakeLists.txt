@@ -7,6 +7,7 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 add_executable(OneTapConnect WIN32
     src/main.cpp
+    src/Bluetooth.cpp
     src/DataUsage.cpp
     src/HotspotProfile.cpp
     src/Settings.cpp
@@ -20,4 +21,4 @@ add_executable(OneTapConnect WIN32
 
 target_compile_definitions(OneTapConnect PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_compile_options(OneTapConnect PRIVATE /W4 /permissive- /utf-8)
-target_link_libraries(OneTapConnect PRIVATE comctl32 iphlpapi wcmapi wlanapi)
+target_link_libraries(OneTapConnect PRIVATE bthprops comctl32 iphlpapi wlanapi ws2_32)
