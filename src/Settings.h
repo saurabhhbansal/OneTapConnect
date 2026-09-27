@@ -12,6 +12,8 @@ struct HotspotSettings {
     bool metered = true;
     unsigned long long wakeDevice = 0; // Bluetooth address of the iPhone whose automation switches the hotspot on.
     std::wstring wakeDeviceName;
+    bool startWithWindows = true;
+    bool animateIcon = true;
 };
 
 struct MonthlyUsage {

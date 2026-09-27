@@ -22,7 +22,12 @@ On a Mac, your iPhone's hotspot is always in the Wi-Fi menu, and choosing it wak
 ## Setup
 
 1. **Pair your iPhone with the PC** in **Windows Settings › Bluetooth & devices › Add device**.
-2. **Create the automation on your iPhone:** open **Shortcuts › Automation › New Automation › Bluetooth**, choose your PC, then **Is Connected** and **Run Immediately**. Tap **Next › New Blank Automation**, add the **Set Personal Hotspot** action and set it to **On**.
+2. **Add the automation to your iPhone:** scan the code below with the iPhone's camera, or open the [OneTapConnect Automation](https://www.icloud.com/shortcuts/7265a23b4d524836a9f0d26e65da695e) link on the iPhone. Make sure its Bluetooth trigger is set to your PC. The same code is shown in OneTapConnect's Settings.
+
+   <img src="assets/automation-qr.png" width="180" alt="QR code for the OneTapConnect Automation">
+
+
+   On iOS 17 to 26, create it yourself instead: open **Shortcuts › Automation › New Automation › Bluetooth**, choose your PC, then **Is Connected** and **Run Immediately**. Tap **Next › New Blank Automation**, add the **Set Personal Hotspot** action and set it to **On**.
 3. **Install OneTapConnect:** download `OneTapConnect.exe` from the [latest release](../../releases/latest), move it somewhere permanent (for example `%LOCALAPPDATA%\Programs\OneTapConnect\`), and run it. The app isn't code-signed, so Windows SmartScreen may warn you; choose **More info › Run anyway**.
 4. **Enter your hotspot details:**
    - **Hotspot name**: your iPhone's name, exactly as shown in **Settings › General › About › Name**. iPhone names use a curly apostrophe (’); if you type a straight one, OneTapConnect offers to fix it.
@@ -33,8 +38,8 @@ From then on OneTapConnect starts with Windows.
 
 ## Use
 
-- **Click** the tray icon to connect. You're online a few seconds later.
-- **Right-click** it for the menu: connect or disconnect, data used this month, settings, start with Windows, uninstall, and quit.
+- **Click** the tray icon to connect. The icon turns amber while connecting and green once you're online, a few seconds later.
+- **Right-click** it for the menu: connect or disconnect, data used this month, settings, and quit.
 - To keep the button always visible, drag the icon out of the tray overflow (**^**) onto the taskbar. You can also pin `OneTapConnect.exe` to the taskbar; clicking the pinned app connects too.
 - While the hotspot is on, Windows also lists your iPhone by name in its own Wi-Fi menu.
 
@@ -47,6 +52,8 @@ From then on OneTapConnect starts with Windows.
 | Connect automatically whenever it's in range | Off | Windows joins the hotspot on its own whenever it's on, which can use mobile data without you noticing. |
 | Scan for the hotspot before connecting | Off | Looks for the hotspot before joining. Windows only allows Wi-Fi scans for apps with **Location** access, so it asks for permission the first time. |
 | Treat as a metered connection | On | Tells Windows to go easy on data (Windows Update, OneDrive and other background downloads). |
+| Start with Windows | On | Starts OneTapConnect when you sign in. |
+| Animate the tray icon while connecting | On | Shows a wave flowing through the amber icon while connecting. When off, the icon stays amber until connected. |
 
 ### Data usage
 
@@ -62,7 +69,7 @@ Because the hotspot is hidden, Windows finds it by asking nearby devices for it 
 
 ## Uninstall
 
-Right-click the tray icon and choose **Uninstall**. This removes the saved network, the startup entry and all settings, then deletes `OneTapConnect.exe`. The iPhone stays paired; remove it in Windows Bluetooth settings if you like, and delete the automation in Shortcuts.
+Right-click the tray icon, choose **Settings**, and click **Uninstall**. This removes the saved network, the startup entry and all settings, then deletes `OneTapConnect.exe`. The iPhone stays paired; remove it in Windows Bluetooth settings if you like, and delete the automation in Shortcuts.
 
 ## Build from source
 

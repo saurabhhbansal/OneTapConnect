@@ -70,6 +70,8 @@ std::optional<HotspotSettings> Settings::LoadHotspot()
     settings.metered = ReadNumber<DWORD>(L"Metered").value_or(1) != 0;
     settings.wakeDevice = ReadNumber<ULONGLONG>(L"WakeDevice").value_or(0);
     settings.wakeDeviceName = ReadString(AppKey, L"WakeDeviceName").value_or(L"");
+    settings.startWithWindows = IsStartupEnabled();
+    settings.animateIcon = ReadNumber<DWORD>(L"AnimateIcon").value_or(1) != 0;
     return settings;
 }
 
@@ -81,6 +83,8 @@ void Settings::SaveHotspot(const HotspotSettings& settings)
     WriteDword(L"Metered", settings.metered);
     WriteQword(L"WakeDevice", settings.wakeDevice);
     WriteString(AppKey, L"WakeDeviceName", settings.wakeDeviceName);
+    WriteDword(L"AnimateIcon", settings.animateIcon);
+    SetStartupEnabled(settings.startWithWindows);
 }
 
 MonthlyUsage Settings::LoadUsage()

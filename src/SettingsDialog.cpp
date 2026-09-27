@@ -86,6 +86,34 @@ bool ConfirmApostrophe(HWND dialog, std::wstring& ssid)
     }
 }
 
+// Scales the QR bitmap by a whole number so every module stays sharp at any DPI.
+void DrawAutomationQr(const DRAWITEMSTRUCT& item)
+{
+    const auto instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(item.hwndItem, GWLP_HINSTANCE));
+    const auto qr = static_cast<HBITMAP>(LoadImageW(instance, MAKEINTRESOURCEW(IDB_AUTOMATION_QR), IMAGE_BITMAP, 0, 0, 0));
+    if (!qr)
+        return;
+
+    BITMAP info{};
+    GetObjectW(qr, sizeof(info), &info);
+    const int width = item.rcItem.right - item.rcItem.left;
+    const int height = item.rcItem.bottom - item.rcItem.top;
+    const int scale = std::max(1L, std::min(width, height) / info.bmWidth);
+    const int side = info.bmWidth * scale;
+    const int left = item.rcItem.left + (width - side) / 2;
+    const int top = item.rcItem.top + (height - side) / 2;
+
+    HDC source = CreateCompatibleDC(item.hDC);
+    const HGDIOBJ previous = SelectObject(source, qr);
+    SetTextColor(item.hDC, RGB(0, 0, 0));
+    SetBkColor(item.hDC, RGB(255, 255, 255));
+    SetStretchBltMode(item.hDC, COLORONCOLOR);
+    StretchBlt(item.hDC, left, top, side, side, source, 0, 0, info.bmWidth, info.bmHeight, SRCCOPY);
+    SelectObject(source, previous);
+    DeleteDC(source);
+    DeleteObject(qr);
+}
+
 void Initialize(HWND dialog, DialogContext& context)
 {
     const HotspotSettings settings = context.current.value_or(HotspotSettings{});
@@ -102,6 +130,8 @@ void Initialize(HWND dialog, DialogContext& context)
     CheckRadioButton(dialog, IDC_MODE_MANUAL, IDC_MODE_AUTO, mode);
     CheckDlgButton(dialog, IDC_SCAN, settings.scanBeforeConnect ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(dialog, IDC_METERED, settings.metered ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(dialog, IDC_STARTUP, settings.startWithWindows ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(dialog, IDC_ANIMATE, settings.animateIcon ? BST_CHECKED : BST_UNCHECKED);
     FillWakeDevices(dialog, context, settings);
 
     const auto instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE));
@@ -121,6 +151,8 @@ bool Save(HWND dialog, const DialogContext& context)
     settings.connectMode = IsDlgButtonChecked(dialog, IDC_MODE_AUTO) ? ConnectMode::Automatic : ConnectMode::Manual;
     settings.scanBeforeConnect = IsDlgButtonChecked(dialog, IDC_SCAN) == BST_CHECKED;
     settings.metered = IsDlgButtonChecked(dialog, IDC_METERED) == BST_CHECKED;
+    settings.startWithWindows = IsDlgButtonChecked(dialog, IDC_STARTUP) == BST_CHECKED;
+    settings.animateIcon = IsDlgButtonChecked(dialog, IDC_ANIMATE) == BST_CHECKED;
     const std::wstring passphrase = ControlText(dialog, IDC_PASSWORD);
 
     if (!HotspotProfile::IsValidSsid(settings.ssid)) {
@@ -159,6 +191,13 @@ INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lPa
         Initialize(dialog, *reinterpret_cast<DialogContext*>(lParam));
         return TRUE;
 
+    case WM_DRAWITEM:
+        if (wParam == IDC_AUTOMATION_QR) {
+            DrawAutomationQr(*reinterpret_cast<const DRAWITEMSTRUCT*>(lParam));
+            return TRUE;
+        }
+        break;
+
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
         case IDOK: {
@@ -167,8 +206,9 @@ INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lPa
                 EndDialog(dialog, IDOK);
             return TRUE;
         }
+        case IDC_UNINSTALL:
         case IDCANCEL:
-            EndDialog(dialog, IDCANCEL);
+            EndDialog(dialog, LOWORD(wParam));
             return TRUE;
         }
         break;
@@ -178,10 +218,18 @@ INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lPa
 
 }
 
-bool ShowSettingsDialog(HINSTANCE instance, HWND owner, const std::optional<HotspotSettings>& current,
-                        const ApplySettingsHandler& apply)
+SettingsDialogResult ShowSettingsDialog(HINSTANCE instance, HWND owner, const std::optional<HotspotSettings>& current,
+                                        const ApplySettingsHandler& apply)
 {
     DialogContext context{ current, apply, {} };
-    return DialogBoxParamW(instance, MAKEINTRESOURCEW(IDD_SETTINGS), owner, DialogProc,
-                           reinterpret_cast<LPARAM>(&context)) == IDOK;
+    const INT_PTR result = DialogBoxParamW(instance, MAKEINTRESOURCEW(IDD_SETTINGS), owner, DialogProc,
+                                           reinterpret_cast<LPARAM>(&context));
+    switch (result) {
+    case IDOK:
+        return SettingsDialogResult::Saved;
+    case IDC_UNINSTALL:
+        return SettingsDialogResult::UninstallRequested;
+    default:
+        return SettingsDialogResult::Cancelled;
+    }
 }

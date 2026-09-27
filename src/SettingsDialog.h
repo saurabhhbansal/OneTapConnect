@@ -13,5 +13,7 @@
 using ApplySettingsHandler =
     std::function<bool(HWND dialog, const HotspotSettings& settings, const std::wstring& passphrase)>;
 
-bool ShowSettingsDialog(HINSTANCE instance, HWND owner, const std::optional<HotspotSettings>& current,
-                        const ApplySettingsHandler& apply);
+enum class SettingsDialogResult { Saved, Cancelled, UninstallRequested };
+
+SettingsDialogResult ShowSettingsDialog(HINSTANCE instance, HWND owner, const std::optional<HotspotSettings>& current,
+                                        const ApplySettingsHandler& apply);

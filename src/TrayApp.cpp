@@ -22,6 +22,8 @@ constexpr UINT BluetoothResultMessage = WM_APP + 3;
 constexpr UINT_PTR ScanTimer = 1;
 constexpr UINT_PTR RetryTimer = 2;
 constexpr UINT_PTR DeadlineTimer = 3;
+constexpr UINT_PTR AnimationTimer = 4;
+constexpr UINT AnimationFrameMs = 250;
 constexpr UINT ScanTimeoutMs = 5'000;
 constexpr UINT HotspotStartupDelayMs = 3'000;
 constexpr UINT RetryIntervalMs = 3'000;
@@ -31,8 +33,6 @@ enum MenuCommand : UINT {
     CommandConnect = 1,
     CommandDisconnect,
     CommandSettings,
-    CommandStartup,
-    CommandUninstall,
     CommandQuit,
 };
 
@@ -101,7 +101,7 @@ int TrayApp::Run(bool connectNow)
         return 1;
     }
 
-    LoadTrayIcon();
+    LoadTrayIcons();
     ShowTrayIcon(NIM_ADD);
 
     if (Settings::IsStartupEnabled())
@@ -157,7 +157,7 @@ LRESULT TrayApp::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_SETTINGCHANGE:
         if (lParam && std::wstring_view(reinterpret_cast<const wchar_t*>(lParam)) == L"ImmersiveColorSet") {
-            LoadTrayIcon();
+            LoadTrayIcons();
             ShowTrayIcon();
         }
         return 0;
@@ -204,12 +204,32 @@ bool TrayApp::CreateMainWindow()
     return window_ != nullptr;
 }
 
-void TrayApp::LoadTrayIcon()
+TrayApp::UniqueIcon TrayApp::LoadTrayIcon(int iconId) const
 {
-    const int iconId = TaskbarUsesLightTheme() ? IDI_TRAY_BLACK : IDI_TRAY_WHITE;
     HICON icon = nullptr;
-    if (SUCCEEDED(LoadIconMetric(instance_, MAKEINTRESOURCEW(iconId), LIM_SMALL, &icon)))
-        trayIcon_.reset(icon);
+    LoadIconMetric(instance_, MAKEINTRESOURCEW(iconId), LIM_SMALL, &icon);
+    return UniqueIcon(icon);
+}
+
+void TrayApp::LoadTrayIcons()
+{
+    icons_.idle = LoadTrayIcon(TaskbarUsesLightTheme() ? IDI_TRAY_BLACK : IDI_TRAY_WHITE);
+    icons_.connecting = LoadTrayIcon(IDI_TRAY_CONNECTING);
+    icons_.connected = LoadTrayIcon(IDI_TRAY_CONNECTED);
+    for (int i = 0; i < static_cast<int>(icons_.connectingFrames.size()); ++i)
+        icons_.connectingFrames[i] = LoadTrayIcon(IDI_TRAY_CONNECTING_0 + i);
+}
+
+// Amber while connecting (animated if enabled), green once connected.
+HICON TrayApp::CurrentIcon() const
+{
+    if (state_ == State::Connected)
+        return icons_.connected.get();
+    if (!AttemptInProgress())
+        return icons_.idle.get();
+    if (settings_->animateIcon)
+        return icons_.connectingFrames[animationFrame_].get();
+    return icons_.connecting.get();
 }
 
 void TrayApp::ShowTrayIcon(DWORD action) const
@@ -217,7 +237,7 @@ void TrayApp::ShowTrayIcon(DWORD action) const
     NOTIFYICONDATAW data = IconData();
     data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
     data.uCallbackMessage = TrayIconMessage;
-    data.hIcon = trayIcon_.get();
+    data.hIcon = CurrentIcon();
     wcsncpy_s(data.szTip, Tooltip().c_str(), _TRUNCATE);
     Shell_NotifyIconW(action, &data);
 
@@ -328,6 +348,12 @@ void TrayApp::OnBluetoothResult(int error)
 
 void TrayApp::OnTimer(UINT_PTR timer)
 {
+    if (timer == AnimationTimer) {
+        animationFrame_ = (animationFrame_ + 1) % icons_.connectingFrames.size();
+        ShowTrayIcon();
+        return;
+    }
+
     KillTimer(window_, timer);
 
     if (timer == ScanTimer && state_ == State::Scanning)
@@ -350,14 +376,8 @@ void TrayApp::OnCommand(UINT command)
     case CommandSettings:
         OpenSettings();
         break;
-    case CommandStartup:
-        Settings::SetStartupEnabled(!Settings::IsStartupEnabled());
-        break;
-    case CommandUninstall:
-        Uninstall();
-        break;
     case CommandQuit:
-        DestroyWindow(window_);
+        Quit();
         break;
     }
 }
@@ -390,10 +410,6 @@ void TrayApp::ShowMenu(POINT anchor)
     }
 
     AppendMenuW(menu, MF_STRING, CommandSettings, settings_ ? L"Settings…" : L"Set up hotspot…");
-    AppendMenuW(menu, MF_STRING | (Settings::IsStartupEnabled() ? MF_CHECKED : MF_UNCHECKED), CommandStartup,
-                L"Start with Windows");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, CommandUninstall, L"Uninstall…");
     AppendMenuW(menu, MF_STRING, CommandQuit, L"Quit");
 
     // Without this the menu doesn't close when the user clicks elsewhere.
@@ -513,15 +529,23 @@ void TrayApp::SyncConnectionState()
 void TrayApp::SetState(State state)
 {
     state_ = state;
+
+    if (AttemptInProgress() && settings_->animateIcon)
+        SetTimer(window_, AnimationTimer, AnimationFrameMs, nullptr);
+    else
+        KillTimer(window_, AnimationTimer);
     ShowTrayIcon();
 }
 
 void TrayApp::OpenSettings()
 {
-    ShowSettingsDialog(instance_, window_, settings_,
-                       [this](HWND dialog, const HotspotSettings& updated, const std::wstring& passphrase) {
-                           return ApplySettings(dialog, updated, passphrase);
-                       });
+    const SettingsDialogResult result = ShowSettingsDialog(
+        instance_, window_, settings_, [this](HWND dialog, const HotspotSettings& updated, const std::wstring& passphrase) {
+            return ApplySettings(dialog, updated, passphrase);
+        });
+
+    if (result == SettingsDialogResult::UninstallRequested)
+        Uninstall();
 }
 
 bool TrayApp::ApplySettings(HWND dialog, const HotspotSettings& updated, const std::wstring& passphrase)
@@ -559,12 +583,10 @@ bool TrayApp::ApplySettings(HWND dialog, const HotspotSettings& updated, const s
     const bool firstSetup = !settings_;
     Settings::SaveHotspot(updated);
     settings_ = updated;
-    ShowTrayIcon();
+    SetState(state_); // Applies the animation setting to an attempt already in progress.
 
-    if (firstSetup) {
-        Settings::SetStartupEnabled(true);
+    if (firstSetup)
         Notify(L"You’re all set", L"Click the OneTapConnect icon whenever you want to connect.");
-    }
     return true;
 }
 
@@ -585,4 +607,13 @@ void TrayApp::Uninstall()
 
     uninstalled_ = true;
     DestroyWindow(window_);
+}
+
+void TrayApp::Quit()
+{
+    const int answer = MessageBoxW(
+        window_, L"One-click connecting stops until you open OneTapConnect again.\n\nQuit anyway?",
+        L"Quit OneTapConnect", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2);
+    if (answer == IDYES)
+        DestroyWindow(window_);
 }

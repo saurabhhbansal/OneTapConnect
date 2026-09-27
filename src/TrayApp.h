@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <shellapi.h>
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -35,11 +36,20 @@ private:
     };
     using UniqueIcon = std::unique_ptr<std::remove_pointer_t<HICON>, IconDeleter>;
 
+    struct TrayIcons {
+        UniqueIcon idle; // Follows the taskbar's light or dark theme.
+        UniqueIcon connecting;
+        UniqueIcon connected;
+        std::array<UniqueIcon, 4> connectingFrames;
+    };
+
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT HandleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     bool CreateMainWindow();
 
-    void LoadTrayIcon();
+    UniqueIcon LoadTrayIcon(int iconId) const;
+    void LoadTrayIcons();
+    HICON CurrentIcon() const;
     void ShowTrayIcon(DWORD action = NIM_MODIFY) const;
     NOTIFYICONDATAW IconData() const;
     std::wstring Tooltip() const;
@@ -67,11 +77,13 @@ private:
     void OpenSettings();
     bool ApplySettings(HWND dialog, const HotspotSettings& updated, const std::wstring& passphrase);
     void Uninstall();
+    void Quit();
 
     HINSTANCE instance_;
     HWND window_ = nullptr;
     UINT taskbarCreatedMessage_;
-    UniqueIcon trayIcon_;
+    TrayIcons icons_;
+    size_t animationFrame_ = 0;
 
     WlanClient wlan_;
     BluetoothWake bluetooth_;
